@@ -10,8 +10,7 @@ import queue
 import time
 import cv2
 from functools import partial
-from rtsp_img_publish import tools
-from rtsp_img_publish.frame_publish import RTSPCam
+from rtsp_img_publish.rtsp_cam import RTSPCam
 from std_msgs.msg import UInt8MultiArray
 from cv_bridge import CvBridge
 from hbm_img_msgs.msg import HbmMsg1080P
@@ -23,6 +22,7 @@ class RTSPImgNode(Node):
       self.br = CvBridge()
       chn = self.start_decode_chn
       self.timer_list = []
+      self.cam_list = []
       for cam_config in self.cam_config_list:
         img_format = cam_config["img_format"]
         topic_name = '/pic/' + cam_config["name"] + '_' + img_format
@@ -37,6 +37,7 @@ class RTSPImgNode(Node):
         call_back = partial(self.timer_callback, rtsp_cam, publisher_)
         timer = self.create_timer(0.1, call_back)
         self.timer_list.append(timer)
+        self.cam_list.append(rtsp_cam)
         chn += 1
   
     def timer_callback(self, fpb, publisher):
@@ -48,8 +49,6 @@ class RTSPImgNode(Node):
         else:
            img = self.br.cv2_to_imgmsg(frame)
         publisher.publish(img)
-      else:
-         self.get_logger().info("empty!")
   
     def param_init(self):
       self.declare_parameter('img_topic_queue_size')
@@ -79,14 +78,19 @@ class RTSPImgNode(Node):
         cam_config["url"] = cam_url_value
         cam_config["img_format"] = cam_imgformat_value
         self.cam_config_list.append(cam_config)
-
+    def stop(self):
+        for cam in self.cam_list:
+          cam.cam_stop()
+          cam.join()
 
 
 def main(args=None):
     rclpy.init(args=args)
-    rtsp_url_list = ['rtsp://127.0.0.1:9554/cam_1']
     RTSP_node = RTSPImgNode("rtsp_node")
-    rclpy.spin(RTSP_node)
+    try:
+      rclpy.spin(RTSP_node)
+    except:
+      RTSP_node.stop()
     RTSP_node.destroy_node()
     rclpy.shutdown()
  

@@ -18,17 +18,23 @@ class RTSPCam(threading.Thread):
     self.decode_chn_num = decode_chn_num  
     self.frame_queue = queue.Queue(maxsize = max_queue_size)
     self.logger_handle = logger_handle
+    self.is_stop = False
 
   def is_nv12(self):
      return not self.covert_to_bgr
 
+  def cam_stop(self):
+      self.is_stop = True
+
   def get_resolution(self):
-     return (self.height, self.width);
+     return (self.height, self.width)
 
   def close_rtsp_and_decoder(self):
     self.find_pps_sps = 0
     self.skip_count = 0
     self.image_count = 0
+    self.get_image_failed_count = 0
+    self.decode_image_failed_count = 0
     self.start_time = time.time()
     self.dec.close()
     self.cap.release()
@@ -57,6 +63,8 @@ class RTSPCam(threading.Thread):
     self.find_pps_sps = 0
     self.skip_count = 0
     self.image_count = 0
+    self.get_image_failed_count = 0
+    self.decode_image_failed_count = 0
     self.start_time = time.time()
     return True
 
@@ -76,7 +84,7 @@ class RTSPCam(threading.Thread):
       self.logger_handle.warning("Decoder open failed! Exit!")
       return
 
-    while(rclpy.ok()):
+    while(self.is_stop == False):
       if not self.cap.isOpened():
         if self.reopen() == False:
            self.close_rtsp_and_decoder()
@@ -98,22 +106,40 @@ class RTSPCam(threading.Thread):
         ret = self.dec.set_img(frame.tobytes(), self.decode_chn_num)
         if ret !=0:
             self.logger_handle.warning("decode failed!")
+            self.decode_image_failed_count += 1
+            if(self.decode_image_failed_count >= 10):
+              if self.reopen() == False:
+                self.close_rtsp_and_decoder()
+                self.logger_handle.warning("Reopen failed! Exit!")
+                return
             continue
+        else:
+            self.decode_image_failed_count = 0
         if self.skip_count < 8:
             self.skip_count += 1
             continue
         nv12_frame = self.dec.get_img()
         if nv12_frame is not None:
+            self.get_image_failed_count = 0
             if self.covert_to_bgr == True:
               img = tools.nv12_bgr(nv12_frame, self.width, self.height)
             else:
                img = nv12_frame
             if self.frame_queue.full() == False:
               self.frame_queue.put(img)
+        else:
+          self.get_image_failed_count += 1
+          self.logger_handle.warning("Get frame failed!")
+          if(self.get_image_failed_count >= 10):
+            if self.reopen() == False:
+              self.close_rtsp_and_decoder()
+              self.logger_handle.warning("Reopen failed! Exit!")
+              return
         finish_time = time.time()
         self.image_count += 1
-        if finish_time - self.start_time > 3:
+        if finish_time - self.start_time > 30:
             self.logger_handle.info('Decode CHAN: %.2f' % (self.image_count / (finish_time - self.start_time)))
             self.start_time = finish_time
             self.image_count = 0
     self.close_rtsp_and_decoder()
+    self.logger_handle.warning("end!")
