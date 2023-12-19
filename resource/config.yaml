@@ -2,8 +2,12 @@ rtsp_node:
   ros__parameters:
     img_topic_queue_size: 3
     start_decode_chn: 0
-    rtsp_cam_num: 1
+    rtsp_cam_num: 2
     rtsp_cam1:
         name: rtsp_cam1
         url: 'rtsp://127.0.0.1:9554/cam_1'
-        img_format: bgr
+        img_format: nv12
+    rtsp_cam2:
+         name: rtsp_cam2
+         url: 'rtsp://127.0.0.1:9554/cam_2'
+         img_format: nv12
